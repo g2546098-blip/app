@@ -32,3 +32,5 @@ body[data-risk=danger] .modal h2,body[data-risk=critical] .modal h2{color:#34332
 body.effects-off .danger-banner,body.effects-off .hero,body.effects-off .bear{animation:none!important}
 @media(prefers-reduced-motion:reduce){.danger-banner,.hero,.bear{animation:none!important;transition:none!important}}
 @media(max-width:650px){.danger-banner{font-size:12px;padding:10px;gap:8px}.danger-banner button{padding:6px}.danger-banner #dangerSymbol{font-size:18px}}
+
+.voice-note{font-size:12px;margin:8px 0 0;line-height:1.6}

@@ -5,7 +5,43 @@ const $=id=>document.getElementById(id),KEY='rocky_attendance_v3';let state={cla
 try{let old=JSON.parse(localStorage.getItem(KEY)||'null');if(old&&Array.isArray(old.classes)&&Array.isArray(old.tasks))state=old}catch(e){}
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(state));return true}catch(e){toast('このブラウザでは保存が制限されています');return false}}
 function toast(s){$('toast').textContent=s;$('toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').classList.remove('show'),3200)}
-function say(s){$('speech').textContent=s;if(voice&&'speechSynthesis'in window){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(s.replace(/[🐻♡💜！]/g,''));u.lang='ja-JP';u.rate=1.08;u.pitch=1.25;speechSynthesis.speak(u)}catch(e){}}}
+// 音声は端末にインストールされている日本語読み上げ音声を使用します。
+const voiceProfiles={
+ normal:{label:'かわいい高い声',rate:1.16,pitch:1.95,volume:0.94,prefer:'female'},
+ warning:{label:'女性の声',rate:1.00,pitch:1.18,volume:1,prefer:'female'},
+ danger:{label:'厳しいおじさんの声',rate:0.84,pitch:0.62,volume:1,prefer:'male'},
+ critical:{label:'怪獣のような低い声',rate:0.68,pitch:0.12,volume:1,prefer:'male'}
+};
+let availableVoices=[];
+function loadVoices(){if('speechSynthesis'in window)availableVoices=window.speechSynthesis.getVoices()||[]}
+loadVoices();
+if('speechSynthesis'in window){window.speechSynthesis.addEventListener?.('voiceschanged',loadVoices)}
+function chooseVoice(preference){
+ const japanese=availableVoices.filter(v=>/^ja([_-]|$)/i.test(v.lang));
+ if(!japanese.length)return null;
+ const male=/ichiro|otoya|takumi|keita|daichi|male|男性|男声/i;
+ const female=/haruka|ayumi|nanami|kyoko|sayaka|female|女性|女声|google 日本語/i;
+ return japanese.find(v=>(preference==='male'?male:female).test(v.name))||japanese[0];
+}
+function currentProfile(){return voiceProfiles[document.body.dataset.risk]||voiceProfiles.normal}
+function say(s){
+ $('speech').textContent=s;
+ if(!voice||!('speechSynthesis'in window))return;
+ try{
+  window.speechSynthesis.cancel();loadVoices();
+  const profile=currentProfile();
+  const u=new SpeechSynthesisUtterance(s.replace(/[🐻♡💜！]/g,''));
+  u.lang='ja-JP';u.rate=profile.rate;u.pitch=profile.pitch;u.volume=profile.volume;
+  const chosen=chooseVoice(profile.prefer);if(chosen)u.voice=chosen;
+  window.speechSynthesis.speak(u);
+ }catch(e){console.warn('読み上げに失敗しました',e)}
+}
+function sampleSpeech(){
+ const risk=document.body.dataset.risk||'normal';
+ const lines={normal:'やっほー！ロッキーだよ！今日もいっしょにがんばろうね！',warning:'ちょっと待って！欠席できる回数が少なくなってきたよ。気をつけてね。',danger:'こら！もう欠席できないぞ！次の授業は必ず出席するんだ！',critical:'グオオオ！緊急事態だあ！これ以上休むんじゃなあい！'};
+ say(lines[risk]);
+}
+
 function el(tag,txt,cls){let x=document.createElement(tag);if(txt!==undefined)x.textContent=txt;if(cls)x.className=cls;return x}
 function button(txt,cls,fn){let b=el('button',txt,cls);b.type='button';b.addEventListener('click',fn);return b}
 function remaining(c){return c.total-c.required-c.absent-Math.floor(c.late/2)}
@@ -33,7 +69,7 @@ function field(name,label,type,value,required=true){let d=el('div',undefined,'fi
 function openForm(m,id=null){mode=m;editing=id;let item=id?state[m==='class'?'classes':'tasks'].find(x=>x.id===id):null;$('modalTitle').textContent=(id?'編集：':'追加：')+(m==='class'?'授業':'課題');let f=$('fields');f.replaceChildren();if(m==='class'){f.append(field('name','授業名','text',item?.name||''),field('total','全授業回数','number',item?.total??14),field('required','必要出席回数','number',item?.required??10),field('attend','出席回数','number',item?.attend??0),field('absent','欠席回数','number',item?.absent??0),field('late','遅刻回数','number',item?.late??0))}else{let local=new Date(Date.now()+86400000);local=new Date(local.getTime()-local.getTimezoneOffset()*60000).toISOString().slice(0,16);f.append(field('title','課題名','text',item?.title||''),field('subject','授業名（任意）','text',item?.subject||'',false),field('due','締め切り','datetime-local',item?.due||local))}$('dialog').classList.add('open');setTimeout(()=>f.querySelector('input')?.focus(),40)}
 function closeForm(){$('dialog').classList.remove('open');$('entryForm').reset();mode='';editing=null}
 $('entryForm').addEventListener('submit',function(e){e.preventDefault();try{const f=new FormData(this),v=k=>String(f.get(k)||'').trim();if(mode==='class'){let name=v('name'),nums=['total','required','attend','absent','late'].map(k=>Number(v(k)));if(!name){toast('授業名を入力してね');$('f_name').focus();return}if(nums.some(x=>!Number.isInteger(x)||x<0)||nums[0]<1||nums[1]<1||nums[1]>nums[0]){toast('授業回数・必要出席回数を確認してね');return}if(nums[2]+nums[3]+nums[4]>nums[0]){toast('記録回数の合計が全授業回数を超えているよ');return}let obj={id:editing||String(Date.now())+Math.random(),name,total:nums[0],required:nums[1],attend:nums[2],absent:nums[3],late:nums[4]};if(editing)state.classes=state.classes.map(x=>x.id===editing?obj:x);else state.classes.push(obj)}else if(mode==='task'){if(!v('title')||!v('due')){toast('課題名と締め切りを入力してね');return}let obj={id:editing||String(Date.now())+Math.random(),title:v('title'),subject:v('subject'),due:v('due'),done:editing?(state.tasks.find(x=>x.id===editing)?.done||false):false,alert24:false,alert1:false};if(editing)state.tasks=state.tasks.map(x=>x.id===editing?obj:x);else state.tasks.push(obj)}else return;persist();closeForm();render();toast('保存できたよ！');say('保存できたよ！いっしょに頑張ろうね！')}catch(err){console.error(err);toast('保存中にエラーが発生したよ：'+err.message)}});
-$('effectsBtn').addEventListener('click',()=>{effectsOn=!effectsOn;try{localStorage.setItem('rocky_effects',effectsOn?'on':'off')}catch(e){}updateDanger()});$('addClass').addEventListener('click',()=>openForm('class'));$('addTask').addEventListener('click',()=>openForm('task'));$('cancel').addEventListener('click',closeForm);$('dialog').addEventListener('click',e=>{if(e.target===$('dialog'))closeForm()});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeForm()});$('bearBtn').addEventListener('click',()=>{let danger=state.classes.find(c=>remaining(c)<=0),due=state.tasks.find(t=>!t.done&&new Date(t.due)-Date.now()<86400000);say(danger?`${danger.name}はもう欠席できないよ！出席を頑張ろう！`:due?`${due.title}の締め切りが近いよ！`:state.classes.length?'今日も頑張っててえらい！ぼくが見守ってるよ！':'やっほー！まずは授業を追加してみてね！')});$('voiceBtn').addEventListener('click',()=>{voice=!voice;$('voiceBtn').textContent=voice?'🔊 音声 ON':'🔇 音声 OFF';if(!voice&&'speechSynthesis'in window)speechSynthesis.cancel();toast(voice?'音声をオンにしたよ':'音声をオフにしたよ')});$('notifyBtn').addEventListener('click',async()=>{if(!('Notification'in window)){toast('このブラウザは通知に対応していないよ');return}try{let result=await Notification.requestPermission();toast(result==='granted'?'通知を許可したよ！':'通知が許可されなかったよ')}catch(e){toast('通知を設定できなかったよ')}});
+$('effectsBtn').addEventListener('click',()=>{effectsOn=!effectsOn;try{localStorage.setItem('rocky_effects',effectsOn?'on':'off')}catch(e){}updateDanger()});$('addClass').addEventListener('click',()=>openForm('class'));$('addTask').addEventListener('click',()=>openForm('task'));$('cancel').addEventListener('click',closeForm);$('dialog').addEventListener('click',e=>{if(e.target===$('dialog'))closeForm()});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeForm()});$('bearBtn').addEventListener('click',()=>{let danger=state.classes.find(c=>remaining(c)<=0),due=state.tasks.find(t=>!t.done&&new Date(t.due)-Date.now()<86400000);say(danger?`${danger.name}はもう欠席できないよ！出席を頑張ろう！`:due?`${due.title}の締め切りが近いよ！`:state.classes.length?'今日も頑張っててえらい！ぼくが見守ってるよ！':'やっほー！まずは授業を追加してみてね！')});$('sampleVoiceBtn').addEventListener('click',sampleSpeech);$('voiceBtn').addEventListener('click',()=>{voice=!voice;$('voiceBtn').textContent=voice?'🔊 音声 ON':'🔇 音声 OFF';if(!voice&&'speechSynthesis'in window)speechSynthesis.cancel();toast(voice?'音声をオンにしたよ':'音声をオフにしたよ')});$('notifyBtn').addEventListener('click',async()=>{if(!('Notification'in window)){toast('このブラウザは通知に対応していないよ');return}try{let result=await Notification.requestPermission();toast(result==='granted'?'通知を許可したよ！':'通知が許可されなかったよ')}catch(e){toast('通知を設定できなかったよ')}});
 function checkDeadlines(){let dirty=false;state.tasks.forEach(t=>{if(t.done)return;let diff=new Date(t.due)-Date.now();for(let [hours,key] of [[24,'alert24'],[1,'alert1']]){if(diff>0&&diff<=hours*3600000&&!t[key]){t[key]=true;dirty=true;let msg=`ロッキーからのお知らせ！「${t.title}」の締め切りまで${hours===1?'1時間以内':'24時間以内'}だよ！`;say(msg);toast(msg);if('Notification'in window&&Notification.permission==='granted'){try{new Notification('🐻 Rocky Attendance',{body:msg})}catch(e){}}}}});if(dirty)persist()}
 render();checkDeadlines();setInterval(checkDeadlines,30000);
 })();
